@@ -1,6 +1,9 @@
 import { onMessage, sendMessage } from 'webext-bridge/background'
 import type { Tabs } from 'webextension-polyfill'
 
+console.log('Environment:', import.meta.env.MODE);
+console.log('HMR:', import.meta.hot);
+
 // only on dev mode
 if (import.meta.hot) {
   // @ts-expect-error for background HMR

@@ -1,6 +1,6 @@
 {
-  "name": "vitesse-webext",
-  "displayName": "Vitesse WebExt",
+  "name": "vfat-automate",
+  "displayName": "vfat automate",
   "version": "0.0.1",
   "private": true,
   "packageManager": "pnpm@8.15.4",
@@ -31,7 +31,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "dotenv": "^16.4.5"
+    "bootstrap": "^5.3.3",
+    "dotenv": "^16.4.5",
+    "jquery": "^3.7.1"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^2.8.1",
@@ -58,6 +60,8 @@
     "lint-staged": "^15.2.2",
     "npm-run-all": "^4.1.5",
     "rimraf": "^5.0.5",
+    "sass": "^1.77.6",
+    "sass-loader": "^14.2.1",
     "simple-git-hooks": "^2.10.0",
     "typescript": "^5.4.2",
     "unocss": "^0.58.5",

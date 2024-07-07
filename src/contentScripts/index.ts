@@ -5,12 +5,12 @@ import App from './views/App.vue'
 import { setupApp } from '~/logic/common-setup'
 
 // Firefox `browser.tabs.executeScript()` requires scripts return a primitive value
-(() => {
-  console.info('[vitesse-webext] Hello world from content script')
+setTimeout(() => {
+  console.info('[__NAME__] Hello world from content script')
 
   // communication example: send previous tab title from background page
   onMessage('tab-prev', ({ data }) => {
-    console.log(`[vitesse-webext] Navigate from page "${data.title}"`)
+    console.log(`[__NAME__] Navigate from page "${data.title}"`)
   })
 
   // mount component to context window
@@ -27,4 +27,5 @@ import { setupApp } from '~/logic/common-setup'
   const app = createApp(App)
   setupApp(app)
   app.mount(root)
-})()
+
+}, 3*1000)
