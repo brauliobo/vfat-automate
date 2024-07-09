@@ -19,7 +19,10 @@ export default {
 
       bmin: null, bmax: null, brange: null, bdist: null,
 
-      settings: { rbdmin: 20, rbdreq: 30, slippage: 0.1, },
+      settings: {
+        enabled: false,
+        rbdmin: 20, rbdreq: 30, slippage: 0.1,
+      },
       rebals: [ 
         {enabled: true, pmin:  0, pmax: 0, rmin: null, rmax: null, range: null, dmin: null},
         {enabled: true, pmin:  0, pmax: 1, rmin: null, rmax: null, range: null, dmin: null},
@@ -55,18 +58,8 @@ export default {
       this.dmax = this.calcDist(rmax-v)
       this.dmin = this.calcDist(v-rmin)
 
-      //this.setSlippage()
-
-      //new Notification('test', {body: Min ${100*(1-v/rmin)}%, Max ${100*(1-rmax/v)}%})
-
-      //if (this.dmax < this.settings.rbdmin || this.dmin < this.settings.rbdmin)
-        //this.rebalance()
-    },
-
-    setSlippage() {
-      [...document.querySelectorAll(`.bx--number__controls button[aria-label="${this.settings.slippage}"]`)].forEach(e => {
-        e.click()
-      })
+      if (this.settings.enabled && this.dmax < this.settings.rbdmin || this.dmin < this.settings.rbdmin)
+        this.rebalance()
     },
 
     onPriceChange() {
@@ -77,9 +70,6 @@ export default {
       this.status = 'Fetching base range'
 
       await this.sleep(1*1000)
-
-      //this.pmin = parseInt($('label:contains("Min price")').val())
-      //this.pmax = parseInt($('label:contains("Max price")').val())
 
       this.brange = this.range / this.rpct
       this.bmin = this.brange * 100
@@ -96,25 +86,58 @@ export default {
       this.status = null
     },
 
-    updRebals() {
+    setSlippage() {
+      [...document.querySelectorAll(`.bx--number__controls button[aria-label="${this.settings.slippage}"]`)].forEach(e => {
+        e.click()
+      })
+    },
+    async setRange(min, max) {
+      await this.sleep(1*1000) // wait for UI
+      let bmin = $('label:contains("Min price") + div input').last()
+      let bmax = $('label:contains("Max price") + div input').last()
+
+      bmin.val(min)
+      bmax.val(max)
+      bmin[0].dispatchEvent(new Event('change'))
+      bmax[0].dispatchEvent(new Event('change'))
+    },
+    async tabSwitch(name) {
+      $(`.bx--content-switcher button:contains("${name}")`).click()
+      await this.sleep(1*1000) // wait for UI
     },
 
     async compound() {
-      document.querySelector('.bx--content-switcher button:nth-child(4)').click()
-      await this.sleep(1*1000) // wait for UI
-      let btn = $('.aerodrome-row .bx--btn:contains("Compound")').last()
-      while (btn.prop('disabled')) await this.sleep(1*1000)
-      btn.click()
-      this.confirm('Compounding')
+      this.transact('Compounding', async () => {
+        this.tabSwitch('Compound')
+        this.setSlippage()
+
+        let btn = $('.aerodrome-row .bx--btn:contains("Compound")').last()
+        while (btn.prop('disabled')) if (this.status) await this.sleep(1*1000); else return
+        btn.click()
+      })
+    },
+
+    async harvest() {
+      this.transact('Harvesting', async () => {
+        this.tabSwitch('Harvest')
+        this.setSlippage()
+
+        let btn = $('.aerodrome-row .bx--btn:contains("Harvest")').last()
+        while (btn.prop('disabled')) if (this.status) await this.sleep(1*1000); else return
+        btn.click()
+      })
     },
 
     async rebalance() {
-      document.querySelector('.bx--content-switcher button:nth-child(2)').click()
-      await this.sleep(1*1000) // wait for UI
-      let btn = document.querySelector('.bx--expandable-row button[depositamount]')
-      while (btn.prop('disabled')) await this.sleep(1*1000)
-      btn.click()
-      this.confirm('Rebalancing')
+      this.transact('Rebalancing', async () => {
+        await this.tabSwitch('Rebalance')
+        this.setSlippage()
+        await this.setRange(-1, 1)
+
+        let btn = $('.bx--btn:contains("Rebalance")').last()
+        while (btn.prop('disabled')) if (this.status) await this.sleep(1*1000); else return
+        btn.click()
+      }, {retry: true})
     },
 
     cancel() {
@@ -122,9 +145,16 @@ export default {
       this.clearOp()
     },
 
-    confirm(status) {
+    transact(status, cb, {retry}) {
       this.status = status
-      this.opInt  = setInterval(() => this.rabbyConfirm(resp => this.clearOp), 1*1000)
+      cb()
+      setTimeout(() => this.rabbyConfirm(resp => this.clearOp), 10*1000)
+
+      this.opInt = setInterval(() => {
+        let error = $('.bx--inline-notification__details:contains("Transaction will revert")')
+        if (error.length) this.clearOp()
+        if (retry) this.transact(status, cb, {retry})
+      }, 1*1000)
     },
 
     flashStatus(status) {
@@ -137,8 +167,12 @@ export default {
       clearInterval(this.opInt)
     },
 
-    rabbyConfirm(cb) {
-      this.rabbyMsg('sign', () => this.rabbyMsg('confirm', cb))
+    async rabbyConfirm(cb) {
+      if (!this.setting.enabled) return
+      this.rabbyMsg('sign', async () => {
+        await this.sleep(10*1000) // wait for UI
+        this.rabbyMsg('confirm', cb)
+      })
     },
     rabbyMsg(op, cb) {
       chrome.runtime.sendMessage(this.rabby_id, {type: `rabby_${op}`})
@@ -169,19 +203,25 @@ export default {
     <div class=btn-group >
       <button class='btn btn-secondary' :disabled=status @click='compound()'  > Compound  </button>
       <button class='btn btn-secondary' :disabled=status @click='rebalance()' > Rebalance </button>
+      <button class='btn btn-secondary' :disabled=status @click='harvest()' > Harvest </button>
     </div>
 
     <Range :min=rmin :max=rmax :dmin=dmin :reb=settings.rbdmin />
 
     <div id=settings class=card >
       <div class=card-body >
-        <h5 class=card-title > Rebals </h5>
-          <Range v-for='rb in rebals' :min=rb.rmin :max=rb.rmax :dmin=rb.dmin :reb=settings.rbdmin >
-            <div class='form-check d-inline-block' >
-              <input class=form-check-input type=checkbox role=switch :checked=rb.enabled >
-              <label class=form-check-label> <b> {{rb.pmin}}/{{rb.pmax}} </b> </label>
-            </div>
-          </Range>
+        <div class='d-flex flex-row' >
+          <h5 class=card-title > Rebals </h5>
+          <div class='form-check form-switch' >
+            <input class=form-check-input type=checkbox role=switch v-model=settings.enabled >
+          </div>
+        </div>
+        <Range v-for='rb in rebals' :min=rb.rmin :max=rb.rmax :dmin=rb.dmin :reb=settings.rbdmin >
+          <div class='form-check form-switch d-inline-block' >
+            <input class=form-check-input type=checkbox role=switch v-model=rb.enabled >
+            <label class=form-check-label> <b> {{rb.pmin}}/{{rb.pmax}} </b> </label>
+          </div>
+        </Range>
 
       </div>
     </div>
