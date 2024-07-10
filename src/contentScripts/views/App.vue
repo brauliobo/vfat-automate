@@ -1,3 +1,47 @@
+<template>
+  <div data-bs-theme=dark class='card position-fixed start-0 bottom-0 m-5 z-3'>
+    <div class=row v-if=status >
+      <b>Status:</b> {{status}}
+      <button @click='cancel()'> Cancel </button>
+    </div>
+
+    <div class=btn-group >
+      <button class='btn btn-secondary' :disabled=status @click=compound()  > Compound  </button>
+      <button class='btn btn-secondary' :disabled=status @click=rebalance() > Rebalance </button>
+      <button class='btn btn-secondary' :disabled=status @click=harvest() > Harvest </button>
+    </div>
+
+    <Range :min=rmin :max=rmax :dmin=dmin :reb=settings.rbdmin />
+
+    <div id=settings class=card >
+      <div class=card-body >
+        <div class='d-flex flex-row' >
+          <h5 class=card-title > Rebals </h5>
+          <div class='form-check form-switch' >
+            <input class=form-check-input type=checkbox role=switch v-model=settings.enabled @change=reload() >
+          </div>
+        </div>
+        <Range v-for='rb in settings.rebals' :min=rb.rmin :max=rb.rmax :dmin=rb.dmin :reb=settings.rbdmin >
+          <div class='form-check form-switch d-inline-block' >
+            <input class=form-check-input type=checkbox role=switch v-model=rb.enabled @change=saveSettings() >
+            <label class=form-check-label> <b> {{rb.pmin}}/{{rb.pmax}} </b> </label>
+          </div>
+        </Range>
+
+      </div>
+    </div>
+
+    <div id=settings class=card >
+      <div class=card-body >
+        <h5 class=card-title > Settings </h5>
+        <div> Rebalance Trigger %: <input type=number min=1 max=40 v-model=settings.rbdmin @change=reload() /> </div>
+        <div> Rebalance Acceptance %: <input type=number :min=settings.rbdmin max=40 v-model=settings.rbdreq /> </div>
+        <div> Slippage: <input type=number min=0.1 max=3 v-model=settings.slippage /> </div>
+      </div>
+    </div>
+  </div>
+</template>
+
 <script>
 import Range from '/components/Range.vue'
 import '../style.css'
@@ -7,7 +51,6 @@ export default {
 
   data() {
     return {
-      enabled: true,
       status: null, opInt: null,
       rabby_id: 'jcnpbgidgmloifpjgiodolmobcjjpkno',
 
@@ -22,17 +65,26 @@ export default {
       settings: {
         enabled: false,
         rbdmin: 20, rbdreq: 30, slippage: 0.1,
+        rebals: [ 
+          {enabled: true, pmin:  0, pmax: 0, rmin: null, rmax: null, range: null, dmin: null},
+          {enabled: true, pmin:  0, pmax: 1, rmin: null, rmax: null, range: null, dmin: null},
+          {enabled: true, pmin: -1, pmax: 0, rmin: null, rmax: null, range: null, dmin: null},
+          {enabled: true, pmin: -1, pmax: 1, rmin: null, rmax: null, range: null, dmin: null},
+        ],
       },
-      rebals: [ 
-        {enabled: true, pmin:  0, pmax: 0, rmin: null, rmax: null, range: null, dmin: null},
-        {enabled: true, pmin:  0, pmax: 1, rmin: null, rmax: null, range: null, dmin: null},
-        {enabled: true, pmin: -1, pmax: 0, rmin: null, rmax: null, range: null, dmin: null},
-        {enabled: true, pmin: -1, pmax: 1, rmin: null, rmax: null, range: null, dmin: null},
-      ],
     }
   },
 
   methods: {
+
+    async loadSettings() {
+      let { ['vfat_automate']: value } = await chrome.storage.local.get(['vfat_automate'])
+      if (value?.rebals) value.rebals = Object.values(value.rebals) 
+      this.settings = { ...this.settings, ...value }
+    },
+    async saveSettings() {
+      await chrome.storage.local.set({ ['vfat_automate']: this.settings })
+    },
 
     calcDist(diff, range) {
       range = range || this.range
@@ -58,7 +110,8 @@ export default {
       this.dmax = this.calcDist(rmax-v)
       this.dmin = this.calcDist(v-rmin)
 
-      if (this.settings.enabled && this.dmax < this.settings.rbdmin || this.dmin < this.settings.rbdmin)
+      if (!this.settings.enabled) return
+      if (this.dmin <= this.settings.rbdmin || this.dmax <= this.settings.rbdmin)
         this.rebalance()
     },
 
@@ -76,7 +129,7 @@ export default {
       if (this.bmin > this.price) this.bmin -= this.brange
       this.bmax = this.bmin + this.brange
 
-      this.rebals.forEach(rb => {
+      this.settings.rebals.forEach(rb => {
         rb.rmin = (this.bmin + rb.pmin*this.brange).toFixed(1)
         rb.rmax = (this.bmax + rb.pmax*this.brange).toFixed(1)
         rb.range = rb.rmax - rb.rmin
@@ -146,13 +199,15 @@ export default {
     },
 
     transact(status, cb, {retry}) {
+      if (this.status) return
       this.status = status
       cb()
-      setTimeout(() => this.rabbyConfirm(resp => this.clearOp), 10*1000)
+      setTimeout(() => this.rabbyConfirm(this.clearOp), 10*1000)
 
       this.opInt = setInterval(() => {
         let error = $('.bx--inline-notification__details:contains("Transaction will revert")')
-        if (error.length) this.clearOp()
+        if (!error.length) return
+        this.clearOp()
         if (retry) this.transact(status, cb, {retry})
       }, 1*1000)
     },
@@ -168,7 +223,7 @@ export default {
     },
 
     async rabbyConfirm(cb) {
-      if (!this.setting.enabled) return
+      if (!this.settings.enabled) return
       this.rabbyMsg('sign', async () => {
         await this.sleep(10*1000) // wait for UI
         this.rabbyMsg('confirm', cb)
@@ -187,53 +242,10 @@ export default {
   },
 
   mounted() {
+    this.loadSettings()
     setInterval(this.reload, 1*1000)
   },
 }
 
 </script>
-
-<template>
-  <div data-bs-theme=dark class='card position-fixed start-0 bottom-0 m-5 z-3'>
-    <div class=row v-if=status >
-      <b>Status:</b> {{status}}
-      <button @click='cancel()'> Cancel </button>
-    </div>
-
-    <div class=btn-group >
-      <button class='btn btn-secondary' :disabled=status @click='compound()'  > Compound  </button>
-      <button class='btn btn-secondary' :disabled=status @click='rebalance()' > Rebalance </button>
-      <button class='btn btn-secondary' :disabled=status @click='harvest()' > Harvest </button>
-    </div>
-
-    <Range :min=rmin :max=rmax :dmin=dmin :reb=settings.rbdmin />
-
-    <div id=settings class=card >
-      <div class=card-body >
-        <div class='d-flex flex-row' >
-          <h5 class=card-title > Rebals </h5>
-          <div class='form-check form-switch' >
-            <input class=form-check-input type=checkbox role=switch v-model=settings.enabled >
-          </div>
-        </div>
-        <Range v-for='rb in rebals' :min=rb.rmin :max=rb.rmax :dmin=rb.dmin :reb=settings.rbdmin >
-          <div class='form-check form-switch d-inline-block' >
-            <input class=form-check-input type=checkbox role=switch v-model=rb.enabled >
-            <label class=form-check-label> <b> {{rb.pmin}}/{{rb.pmax}} </b> </label>
-          </div>
-        </Range>
-
-      </div>
-    </div>
-
-    <div id=settings class=card >
-      <div class=card-body >
-        <h5 class=card-title > Settings </h5>
-        <div> Rebalance Trigger %: <input type=number min=1 max=40 v-model=settings.rbdmin /> </div>
-        <div> Rebalance Acceptance %: <input type=number :min=settings.rbdmin max=40 v-model=settings.rbdreq /> </div>
-        <div> Slippage: <input type=number min=0.1 max=3 v-model=settings.slippage /> </div>
-      </div>
-    </div>
-  </div>
-</template>
 
