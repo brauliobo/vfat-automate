@@ -23,7 +23,7 @@
         </div>
         <Range v-for='rb in settings.rebals' :min=rb.rmin :max=rb.rmax :dmin=rb.dmin :reb=settings.rbdmin >
           <div class='form-check form-switch d-inline-block' >
-            <input class=form-check-input type=checkbox role=switch v-model=rb.enabled @change=saveSettings() >
+            <input class=form-check-input type=checkbox role=switch v-model=rb.enabled >
             <label class=form-check-label> <b> {{rb.pmin}}/{{rb.pmax}} </b> </label>
           </div>
         </Range>
@@ -73,6 +73,10 @@ export default {
         ],
       },
     }
+  },
+
+  watch: {
+    settings: { deep: true, handler(newVal) { this.saveSettings() } },
   },
 
   methods: {
