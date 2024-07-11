@@ -1,8 +1,10 @@
 <template>
   <div data-bs-theme=dark class='card position-fixed start-0 bottom-0 m-5 z-3'>
-    <div class=row v-if=status >
-      <b>Status:</b> {{status}}
-      <button @click='cancel()'> Cancel </button>
+    <div class='card-body' v-if=status >
+      <b>Status: </b>
+      <span>{{status}}</span>
+      <span v-if=opstatus > - {{opstatus}}</span>
+      <button class='btn' @click='cancel()'> Cancel </button>
     </div>
 
     <div class=btn-group >
@@ -47,17 +49,19 @@ import Range from '/components/Range.vue'
 import '../style.css'
 import $ from 'jquery' // for :constains selector
 
+const RABBY_EXTID = 'jcnpbgidgmloifpjgiodolmobcjjpkno'
+
 const ErrorsSelector = `
-.bx--inline-notification__details:contains("Transaction will revert"),
-.bx--inline-notification__details:contains("Transaction reverted")
+.bx--inline-notification--error:contains("Transaction will revert"),
+.bx--inline-notification--error:contains("Transaction reverted")
 `
 
 export default {
 
   data() {
     return {
-      status: null, opInt: null,
-      rabby_id: 'jcnpbgidgmloifpjgiodolmobcjjpkno',
+      status: null, opstatus: null,
+      opInt: null, rabby_op: null,
 
       //                       price                                 rmin   - rmax             rpct
       // 'Current pool price is 3430.3, your position price range is 3401.6 - 3470.3 and it is 2% wide.'
@@ -102,6 +106,8 @@ export default {
     },
 
     reload() {
+      if (this.status) return // can't change params during OP
+
       let el = document.querySelector('p.bx--inline-notification__title') 
       if (!el) return document.querySelector('tr:not(.bx--expandable-row) .symbol')?.click()
 
@@ -130,9 +136,11 @@ export default {
     },
 
     async getBaseRange() {
+      if (this.status) return
       this.status = 'Fetching base range'
 
       await this.setRange(0, 0)
+      await this.sleep(1)
       let txt = document.querySelector('.bx--toast-notification--info').innerText
       let [bmin, bmax] = txt.match(/range ([\d,.]+) - ([\d,\.]+)\./).slice(1,3).map(this.parseNum)
       this.bmin = bmin
@@ -146,6 +154,7 @@ export default {
         rb.dmin = this.calcDist(this.price-rb.rmin, rb.range)
       })
 
+      await this.setRange(this.settings.cpmin, this.settings.cpmax) //revert back
       this.status = null
     },
 
@@ -183,7 +192,7 @@ export default {
         this.tabSwitch('Compound')
         this.setSlippage()
 
-        let btn = $('.aerodrome-row .bx--btn:contains("Compound")').last()
+        let btn = $('.bx--btn:contains("Compound")').last()
         while (btn.prop('disabled')) if (this.status) await this.sleep(1); else return
         btn.click()
       })
@@ -194,7 +203,7 @@ export default {
         this.tabSwitch('Harvest')
         this.setSlippage()
 
-        let btn = $('.aerodrome-row .bx--btn:contains("Harvest")').last()
+        let btn = $('.bx--btn:contains("Harvest")').last()
         while (btn.prop('disabled')) if (this.status) await this.sleep(1); else return
         btn.click()
       })
@@ -202,8 +211,8 @@ export default {
 
     async rebalance() {
       this.transact('Rebalancing', async () => {
-        this.setSlippage()
         await this.setRange(-1, 1)
+        this.setSlippage()
 
         let btn = $('.bx--btn:contains("Rebalance")').last()
         while (btn.prop('disabled')) if (this.status) await this.sleep(1); else return
@@ -212,23 +221,28 @@ export default {
     },
 
     cancel() {
-      this.rabbyMsg('cancel')
+      this.rabby_op = 'cancel'
+      this.rabbyMsg()
       this.clearOp()
     },
 
     transact(status, cb, {retry = true} = {}) {
-      if (this.status) return
       this.clearOp()
       this.status = status
-      cb()
-      setTimeout(this.rabbyConfirm, 10*1000)
 
-      this.opInt = setInterval(() => {
-        let error = $(ErrorsSelector)
-        if (!error.length) return
-        if (retry) this.transact(status, cb, {retry})
-        else this.clearOp()
-      }, 1*1000)
+      this.opInt = setInterval(async () => {
+        await cb()
+        this.opstatus = 'Waiting for Rabby'
+        await this.sleep(10)
+        this.rabbyConfirm()
+        this.opstatus = 'Waiting status'
+        await this.sleep(10)
+        if (document.querySelector('.bx--inline-notification--error')) {
+          if (retry) return // keep interval active
+          else this.clearOp()
+        } else if (document.querySelector('.bx--inline-notification--success'))
+          this.clearOp()
+      }, 30*1000)
     },
 
     flashStatus(status) {
@@ -237,21 +251,25 @@ export default {
     },
 
     clearOp() {
-      this.status = null
+      this.status   = null
+      this.opstatus = null
+      this.rabby_op = null
       clearInterval(this.opInt)
       document.querySelector('.bx--modal-close')?.click() // close any previous error
     },
 
     async rabbyConfirm(cb) {
       if (!this.settings.enabled) return
-      this.rabbyMsg('sign', async () => {
+      this.rabby_op = 'sign'
+      this.rabbyMsg(async () => {
         this.clearOp()
         await this.sleep(10) // wait for UI
-        this.rabbyMsg('confirm', cb)
+        this.rabby_op = 'confirm'
+        this.rabbyMsg(cb)
       })
     },
-    rabbyMsg(op, cb) {
-      chrome.runtime.sendMessage(this.rabby_id, {type: `rabby_${op}`})
+    rabbyMsg(cb) {
+      chrome.runtime.sendMessage(RABBY_EXTID, {type: `rabby_${this.rabby_op}`})
         .then(cb)
         .catch(error => {})
     },
