@@ -47,6 +47,11 @@ import Range from '/components/Range.vue'
 import '../style.css'
 import $ from 'jquery' // for :constains selector
 
+const ErrorsSelector = `
+.bx--inline-notification__details:contains("Transaction will revert"),
+.bx--inline-notification__details:contains("Transaction reverted")
+`
+
 export default {
 
   data() {
@@ -64,6 +69,7 @@ export default {
 
       settings: {
         enabled: false,
+        cpmin: -1, cpmax: 1,
         rbdmin: 20, rbdreq: 30, slippage: 0.1,
         rebals: [ 
           {enabled: true, pmin:  0, pmax: 0, rmin: null, rmax: null, range: null, dmin: null},
@@ -101,7 +107,7 @@ export default {
 
       let m = el.innerText.match(/is ([\d,.]+).+is ([\d,.]+) - ([\d,\.]+).*is (\d+)% wide/)
       if (!m) return
-      let [v,rmin,rmax,rpct] = m.slice(1,5).map((v) => parseFloat(v.replace(/,/g, '')))
+      let [v,rmin,rmax,rpct] = m.slice(1,5).map(this.parseNum)
       this.rmin = rmin
       this.rmax = rmax
       this.rpct = rpct
@@ -126,12 +132,12 @@ export default {
     async getBaseRange() {
       this.status = 'Fetching base range'
 
-      await this.sleep(1*1000)
-
-      this.brange = this.range / this.rpct
-      this.bmin = this.brange * 100
-      if (this.bmin > this.price) this.bmin -= this.brange
-      this.bmax = this.bmin + this.brange
+      await this.setRange(0, 0)
+      let txt = document.querySelector('.bx--toast-notification--info').innerText
+      let [bmin, bmax] = txt.match(/range ([\d,.]+) - ([\d,\.]+)\./).slice(1,3).map(this.parseNum)
+      this.bmin = bmin
+      this.bmax = bmax
+      this.brange = this.rmax / 100 // bmax - bmin is less precise
 
       this.settings.rebals.forEach(rb => {
         rb.rmin = (this.bmin + rb.pmin*this.brange).toFixed(1)
@@ -148,8 +154,17 @@ export default {
         e.click()
       })
     },
+
+    async getRange() {
+      await this.tabSwitch('Rebalance')
+      await this.sleep(1) // wait for UI
+      this.settings.cpmin = $('label:contains("Min price") + div input').last().val()
+      this.settings.cpmax = $('label:contains("Max price") + div input').last().val()
+    },
+
     async setRange(min, max) {
-      await this.sleep(1*1000) // wait for UI
+      await this.tabSwitch('Rebalance')
+      await this.sleep(1) // wait for UI
       let bmin = $('label:contains("Min price") + div input').last()
       let bmax = $('label:contains("Max price") + div input').last()
 
@@ -160,7 +175,7 @@ export default {
     },
     async tabSwitch(name) {
       $(`.bx--content-switcher button:contains("${name}")`).click()
-      await this.sleep(1*1000) // wait for UI
+      await this.sleep(1) // wait for UI
     },
 
     async compound() {
@@ -169,7 +184,7 @@ export default {
         this.setSlippage()
 
         let btn = $('.aerodrome-row .bx--btn:contains("Compound")').last()
-        while (btn.prop('disabled')) if (this.status) await this.sleep(1*1000); else return
+        while (btn.prop('disabled')) if (this.status) await this.sleep(1); else return
         btn.click()
       })
     },
@@ -180,19 +195,18 @@ export default {
         this.setSlippage()
 
         let btn = $('.aerodrome-row .bx--btn:contains("Harvest")').last()
-        while (btn.prop('disabled')) if (this.status) await this.sleep(1*1000); else return
+        while (btn.prop('disabled')) if (this.status) await this.sleep(1); else return
         btn.click()
       })
     },
 
     async rebalance() {
       this.transact('Rebalancing', async () => {
-        await this.tabSwitch('Rebalance')
         this.setSlippage()
         await this.setRange(-1, 1)
 
         let btn = $('.bx--btn:contains("Rebalance")').last()
-        while (btn.prop('disabled')) if (this.status) await this.sleep(1*1000); else return
+        while (btn.prop('disabled')) if (this.status) await this.sleep(1); else return
         btn.click()
       }, {retry: true})
     },
@@ -202,17 +216,18 @@ export default {
       this.clearOp()
     },
 
-    transact(status, cb, {retry}) {
+    transact(status, cb, {retry = true} = {}) {
       if (this.status) return
+      this.clearOp()
       this.status = status
       cb()
-      setTimeout(() => this.rabbyConfirm(this.clearOp), 10*1000)
+      setTimeout(this.rabbyConfirm, 10*1000)
 
       this.opInt = setInterval(() => {
-        let error = $('.bx--inline-notification__details:contains("Transaction will revert")')
+        let error = $(ErrorsSelector)
         if (!error.length) return
-        this.clearOp()
         if (retry) this.transact(status, cb, {retry})
+        else this.clearOp()
       }, 1*1000)
     },
 
@@ -224,12 +239,14 @@ export default {
     clearOp() {
       this.status = null
       clearInterval(this.opInt)
+      document.querySelector('.bx--modal-close')?.click() // close any previous error
     },
 
     async rabbyConfirm(cb) {
       if (!this.settings.enabled) return
       this.rabbyMsg('sign', async () => {
-        await this.sleep(10*1000) // wait for UI
+        this.clearOp()
+        await this.sleep(10) // wait for UI
         this.rabbyMsg('confirm', cb)
       })
     },
@@ -239,14 +256,19 @@ export default {
         .catch(error => {})
     },
 
-    sleep(ms) {
-      return new Promise(res => setTimeout(res, ms))
+    sleep(s) {
+      return new Promise(res => setTimeout(res, s*1000))
+    },
+
+    parseNum(n) {
+      return parseFloat(n.replace(/,/g, '.'))
     },
     
   },
 
   mounted() {
     this.loadSettings()
+    this.getRange()
     setInterval(this.reload, 1*1000)
   },
 }
