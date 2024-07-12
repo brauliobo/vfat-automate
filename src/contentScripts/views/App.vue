@@ -36,7 +36,10 @@
     <div id=settings class=card >
       <div class=card-body >
         <h5 class=card-title > Settings </h5>
-        <div> Rebalance Trigger %: <input type=number min=1 max=40 v-model=settings.rbdthd @change=reload() /> </div>
+        <div> Rebalance Trigger %:
+          <input type=number min=1 max=40 v-model=settings.rbdthd @change=reload() />
+          <span> current price var: {{round(cr.range * settings.rbdthd/100)}}</span>
+        </div>
         <div> Rebalance Acceptance %: <input type=number :min=settings.rbdthd max=40 v-model=settings.rbdreq /> </div>
         <div> Slippage: <input type=number min=0.1 max=3 v-model=settings.slippage /> </div>
       </div>
@@ -107,8 +110,7 @@ export default {
       return Math.round(100 * (Math.abs(diff) / range))
     },
     distThd(dmin) {
-      return Math.min(Math.abs(dmin - this.settings.rbdthd),
-                      Math.abs(100 - dmin - this.settings.rbdthd))
+      return Math.max(this.settings.rbdthd - dmin, 100-this.settings.rbdthd - dmin)
     },
 
     reload() {
@@ -134,8 +136,6 @@ export default {
       this.cr.dmax = this.calcDist(rmax-v)
       this.cr.dmin = this.calcDist(v-rmin)
 
-      console.log(this.cr)
-
       if (!this.settings.enabled) return
       if (this.cr.dmin <= this.settings.rbdthd || this.cr.dmax <= this.settings.rbdthd)
         this.rebalance()
@@ -147,7 +147,7 @@ export default {
 
     findBestRebal() {
       this.rebals.forEach(rb => rb.best = rb.style = null)
-      let br = _.maxBy(this.rebals, rb => { if (this.settings.rebals[rb.i].enabled) return rb.dthd })
+      let br = _.maxBy(this.rebals, rb => { if (this.settings.rebals[rb.i]?.enabled) return rb.dthd })
       if (!br) return
       br.style = 'outline: 1px solid #FFD700'
       br.best  = true
@@ -173,8 +173,8 @@ export default {
 
       this.rebals.forEach((rb, i) => {
         rb.i     = i
-        rb.rmin  = (this.br.rmin + rb.pmin*this.br.range).toFixed(1)
-        rb.rmax  = (this.br.rmax + rb.pmax*this.br.range).toFixed(1)
+        rb.rmin  = this.round(this.br.rmin + rb.pmin*this.br.range)
+        rb.rmax  = this.round(this.br.rmax + rb.pmax*this.br.range)
         rb.range = rb.rmax - rb.rmin
         rb.dmin  = this.calcDist(this.price-rb.rmin, rb.range)
         rb.dthd  = this.distThd(rb.dmin)
@@ -311,6 +311,9 @@ export default {
 
     parseNum(n) {
       return parseFloat(n.replace(/,/g, '.'))
+    },
+    round(n) {
+      return n.toFixed(1)
     },
     
   },
