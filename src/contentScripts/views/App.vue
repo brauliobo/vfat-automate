@@ -80,10 +80,10 @@ export default {
       },
 
       rebals: [
-        {pmin:  0, pmax: 0, rmin: null, rmax: null, range: null, dmin: null, dthd: null, style: null},
-        {pmin:  0, pmax: 1, rmin: null, rmax: null, range: null, dmin: null, dthd: null, style: null},
-        {pmin: -1, pmax: 0, rmin: null, rmax: null, range: null, dmin: null, dthd: null, style: null},
-        {pmin: -1, pmax: 1, rmin: null, rmax: null, range: null, dmin: null, dthd: null, style: null},
+        {pmin:  0, pmax: 0},
+        {pmin:  0, pmax: 1},
+        {pmin: -1, pmax: 0},
+        {pmin: -1, pmax: 1},
       ],
     }
   },
@@ -130,6 +130,8 @@ export default {
       if (this.price < this.rmin || this.price > this.rmax)
         return
 
+      this.findBestRebal()
+
       this.dmax = this.calcDist(rmax-v)
       this.dmin = this.calcDist(v-rmin)
 
@@ -140,6 +142,14 @@ export default {
 
     onPriceChange() {
       this.getBaseRange()
+    },
+
+    findBestRebal() {
+      this.rebals.forEach(rb => rb.best = rb.style = null)
+      let br = _.maxBy(this.rebals, rb => { if (this.settings.rebals[rb.i].enabled) return rb.dthd })
+      if (!br) return
+      br.style = 'outline: 1px solid #FFD700'
+      br.best  = true
     },
 
     async getBaseRange() {
@@ -154,17 +164,16 @@ export default {
       this.bmax = bmax
       this.brange = this.rmax / 100 // bmax - bmin is less precise
 
-      this.rebals.forEach(rb => {
+      this.rebals.forEach((rb, i) => {
+        rb.i     = i
         rb.rmin  = (this.bmin + rb.pmin*this.brange).toFixed(1)
         rb.rmax  = (this.bmax + rb.pmax*this.brange).toFixed(1)
         rb.range = rb.rmax - rb.rmin
         rb.dmin  = this.calcDist(this.price-rb.rmin, rb.range)
         rb.dthd  = this.distThd(rb.dmin)
         rb.style = null
+        rb.best  = false
       })
-
-      let br = _.maxBy(this.rebals, 'dthd')
-      br.style = 'outline: 1px solid #FFD700'
 
       await this.setRange(this.settings.cpmin, this.settings.cpmax) //revert back
       this.status = null

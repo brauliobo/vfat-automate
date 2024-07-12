@@ -17,9 +17,6 @@ import { defineComponent } from 'vue'
 export default defineComponent({
   name: 'Range',
   props: ['rb', 'reb'],
-  created() {
-    console.log(this.rb)
-  }
 })
 </script>
 
