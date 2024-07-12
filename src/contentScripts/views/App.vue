@@ -64,7 +64,7 @@ export default {
       price: null,
       cr: {rmin: null, rmax: null, rpct: null, range: null, dmin: null, dmax: null,},
 
-      bmin: null, bmax: null, brange: null, bdist: null,
+      br: {rmin: null, rmax: null, range: null,},
 
       settings: {
         enabled: false,
@@ -108,7 +108,7 @@ export default {
     },
     distThd(dmin) {
       return Math.min(Math.abs(dmin - this.settings.rbdthd),
-                      Math.abs(dmin - 100-this.settings.rbdthd))
+                      Math.abs(100 - dmin - this.settings.rbdthd))
     },
 
     reload() {
@@ -151,6 +151,7 @@ export default {
       if (!br) return
       br.style = 'outline: 1px solid #FFD700'
       br.best  = true
+      return br
     },
 
     async getBaseRange() {
@@ -159,16 +160,21 @@ export default {
 
       await this.setRange(0, 0)
       await this.sleep(1)
-      let txt = document.querySelector('.bx--toast-notification--info').innerText
-      let [bmin, bmax] = txt.match(/range ([\d,.]+) - ([\d,\.]+)\./).slice(1,3).map(this.parseNum)
-      this.bmin = bmin
-      this.bmax = bmax
-      this.brange = this.cr.rmax / 100 // bmax - bmin is less precise
+      let txt = document.querySelector('.bx--toast-notification').innerText
+      if (txt.includes('No rebalance needed')) {
+        this.br.rmin = this.cr.rmin
+        this.br.rmax = this.cr.rmax
+      } else {
+        let [brmin, brmax] = txt.match(/range ([\d,.]+) - ([\d,\.]+)\./).slice(1,3).map(this.parseNum)
+        this.br.rmin = brmin
+        this.br.rmax = brmax
+      }
+      this.br.range = this.cr.rmax / 100 // br.rmax - br.rmin is less precise
 
       this.rebals.forEach((rb, i) => {
         rb.i     = i
-        rb.rmin  = (this.bmin + rb.pmin*this.brange).toFixed(1)
-        rb.rmax  = (this.bmax + rb.pmax*this.brange).toFixed(1)
+        rb.rmin  = (this.br.rmin + rb.pmin*this.br.range).toFixed(1)
+        rb.rmax  = (this.br.rmax + rb.pmax*this.br.range).toFixed(1)
         rb.range = rb.rmax - rb.rmin
         rb.dmin  = this.calcDist(this.price-rb.rmin, rb.range)
         rb.dthd  = this.distThd(rb.dmin)
@@ -196,13 +202,13 @@ export default {
     async setRange(min, max) {
       await this.tabSwitch('Rebalance')
       await this.sleep(1) // wait for UI
-      let bmin = $('label:contains("Min price") + div input').last()
-      let bmax = $('label:contains("Max price") + div input').last()
+      let pmin = $('label:contains("Min price") + div input').last()
+      let pmax = $('label:contains("Max price") + div input').last()
 
-      bmin.val(min)
-      bmax.val(max)
-      bmin[0].dispatchEvent(new Event('change'))
-      bmax[0].dispatchEvent(new Event('change'))
+      pmin.val(min)
+      pmax.val(max)
+      pmin[0].dispatchEvent(new Event('change'))
+      pmax[0].dispatchEvent(new Event('change'))
     },
     async tabSwitch(name) {
       $(`.bx--content-switcher button:contains("${name}")`).click()
@@ -233,7 +239,8 @@ export default {
 
     async rebalance() {
       this.transact('Rebalancing', async () => {
-        await this.setRange(-1, 1)
+        let brb = this.findBestRebal()
+        await this.setRange(brb.pmin, brb.pmax)
         this.setSlippage()
 
         let btn = $('.bx--btn:contains("Rebalance")').last()
