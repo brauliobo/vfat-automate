@@ -13,7 +13,7 @@
       <button class='btn btn-secondary' :disabled=status @click=harvest() > Harvest </button>
     </div>
 
-    <Range :min=rmin :max=rmax :dmin=dmin :reb=settings.rbdthd />
+    <Range :rb=cr :reb=settings.rbdthd />
 
     <div id=settings class=card >
       <div class=card-body >
@@ -62,8 +62,7 @@ export default {
       //                       price                                 rmin   - rmax             rpct
       // 'Current pool price is 3430.3, your position price range is 3401.6 - 3470.3 and it is 2% wide.'
       price: null,
-      rmin: null, rmax: null, rpct: null, range: null,
-      dmin: null, dmax: null,
+      cr: {rmin: null, rmax: null, rpct: null, range: null, dmin: null, dmax: null,},
 
       bmin: null, bmax: null, brange: null, bdist: null,
 
@@ -104,7 +103,7 @@ export default {
     },
 
     calcDist(diff, range) {
-      range = range || this.range
+      range = range || this.cr.range
       return Math.round(100 * (Math.abs(diff) / range))
     },
     distThd(dmin) {
@@ -121,22 +120,24 @@ export default {
       let m = el.innerText.match(/is ([\d,.]+).+is ([\d,.]+) - ([\d,\.]+).*is (\d+)% wide/)
       if (!m) return
       let [v,rmin,rmax,rpct] = m.slice(1,5).map(this.parseNum)
-      this.rmin = rmin
-      this.rmax = rmax
-      this.rpct = rpct
-      this.range = rmax-rmin
+      this.cr.rmin = rmin
+      this.cr.rmax = rmax
+      this.cr.rpct = rpct
+      this.cr.range = rmax-rmin
       if (v != this.price) this.onPriceChange()
       this.price = v
-      if (this.price < this.rmin || this.price > this.rmax)
+      if (this.price < this.cr.rmin || this.price > this.cr.rmax)
         return
 
       this.findBestRebal()
 
-      this.dmax = this.calcDist(rmax-v)
-      this.dmin = this.calcDist(v-rmin)
+      this.cr.dmax = this.calcDist(rmax-v)
+      this.cr.dmin = this.calcDist(v-rmin)
+
+      console.log(this.cr)
 
       if (!this.settings.enabled) return
-      if (this.dmin <= this.settings.rbdthd || this.dmax <= this.settings.rbdthd)
+      if (this.cr.dmin <= this.settings.rbdthd || this.cr.dmax <= this.settings.rbdthd)
         this.rebalance()
     },
 
@@ -162,7 +163,7 @@ export default {
       let [bmin, bmax] = txt.match(/range ([\d,.]+) - ([\d,\.]+)\./).slice(1,3).map(this.parseNum)
       this.bmin = bmin
       this.bmax = bmax
-      this.brange = this.rmax / 100 // bmax - bmin is less precise
+      this.brange = this.cr.rmax / 100 // bmax - bmin is less precise
 
       this.rebals.forEach((rb, i) => {
         rb.i     = i
