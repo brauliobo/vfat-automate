@@ -1,9 +1,9 @@
 <template>
-  <div>
+  <div v-if=rb :style=rb.style >
     <span> <slot /> </span>
-    <input type=range disabled class='w-auto' min=0 max=100 :value=dmin list=values />
-    <span v-if=dmin ><b>{{dmin}}%</b> in </span>
-    <span v-if=min >{{min}} - {{max}}</span>
+    <input type=range disabled class='w-auto' min=0 max=100 :value=rb.dmin list=values />
+    <span v-if=rb.dmin ><b>{{rb.dmin}}%</b> in </span>
+    <span v-if=rb.rmin >{{rb.rmin}} - {{rb.rmax}}</span>
 
     <datalist id=values>
       <option :value=reb       label='rebal down' />
@@ -16,7 +16,10 @@
 import { defineComponent } from 'vue'
 export default defineComponent({
   name: 'Range',
-  props: ['min', 'max', 'dmin', 'reb'],
+  props: ['rb', 'reb'],
+  created() {
+    console.log(this.rb)
+  }
 })
 </script>
 

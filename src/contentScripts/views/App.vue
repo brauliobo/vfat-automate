@@ -13,7 +13,7 @@
       <button class='btn btn-secondary' :disabled=status @click=harvest() > Harvest </button>
     </div>
 
-    <Range :min=rmin :max=rmax :dmin=dmin :reb=settings.rbdmin />
+    <Range :min=rmin :max=rmax :dmin=dmin :reb=settings.rbdthd />
 
     <div id=settings class=card >
       <div class=card-body >
@@ -23,9 +23,9 @@
             <input class=form-check-input type=checkbox role=switch v-model=settings.enabled @change=reload() >
           </div>
         </div>
-        <Range v-for='rb in settings.rebals' :min=rb.rmin :max=rb.rmax :dmin=rb.dmin :reb=settings.rbdmin >
+        <Range v-for='(rb,i) in rebals' :rb=rb :reb=settings.rbdthd >
           <div class='form-check form-switch d-inline-block' >
-            <input class=form-check-input type=checkbox role=switch v-model=rb.enabled >
+            <input class=form-check-input type=checkbox role=switch v-model=settings.rebals[i].enabled >
             <label class=form-check-label> <b> {{rb.pmin}}/{{rb.pmax}} </b> </label>
           </div>
         </Range>
@@ -36,8 +36,8 @@
     <div id=settings class=card >
       <div class=card-body >
         <h5 class=card-title > Settings </h5>
-        <div> Rebalance Trigger %: <input type=number min=1 max=40 v-model=settings.rbdmin @change=reload() /> </div>
-        <div> Rebalance Acceptance %: <input type=number :min=settings.rbdmin max=40 v-model=settings.rbdreq /> </div>
+        <div> Rebalance Trigger %: <input type=number min=1 max=40 v-model=settings.rbdthd @change=reload() /> </div>
+        <div> Rebalance Acceptance %: <input type=number :min=settings.rbdthd max=40 v-model=settings.rbdreq /> </div>
         <div> Slippage: <input type=number min=0.1 max=3 v-model=settings.slippage /> </div>
       </div>
     </div>
@@ -48,13 +48,9 @@
 import Range from '/components/Range.vue'
 import '../style.css'
 import $ from 'jquery' // for :constains selector
+import _ from 'lodash'
 
 const RABBY_EXTID = 'jcnpbgidgmloifpjgiodolmobcjjpkno'
-
-const ErrorsSelector = `
-.bx--inline-notification--error:contains("Transaction will revert"),
-.bx--inline-notification--error:contains("Transaction reverted")
-`
 
 export default {
 
@@ -74,14 +70,21 @@ export default {
       settings: {
         enabled: false,
         cpmin: -1, cpmax: 1,
-        rbdmin: 20, rbdreq: 30, slippage: 0.1,
+        rbdthd: 20, rbdreq: 30, slippage: 0.1,
         rebals: [ 
-          {enabled: true, pmin:  0, pmax: 0, rmin: null, rmax: null, range: null, dmin: null},
-          {enabled: true, pmin:  0, pmax: 1, rmin: null, rmax: null, range: null, dmin: null},
-          {enabled: true, pmin: -1, pmax: 0, rmin: null, rmax: null, range: null, dmin: null},
-          {enabled: true, pmin: -1, pmax: 1, rmin: null, rmax: null, range: null, dmin: null},
+          {enabled: true},
+          {enabled: true},
+          {enabled: true},
+          {enabled: true},
         ],
       },
+
+      rebals: [
+        {pmin:  0, pmax: 0, rmin: null, rmax: null, range: null, dmin: null, dthd: null, style: null},
+        {pmin:  0, pmax: 1, rmin: null, rmax: null, range: null, dmin: null, dthd: null, style: null},
+        {pmin: -1, pmax: 0, rmin: null, rmax: null, range: null, dmin: null, dthd: null, style: null},
+        {pmin: -1, pmax: 1, rmin: null, rmax: null, range: null, dmin: null, dthd: null, style: null},
+      ],
     }
   },
 
@@ -103,6 +106,10 @@ export default {
     calcDist(diff, range) {
       range = range || this.range
       return Math.round(100 * (Math.abs(diff) / range))
+    },
+    distThd(dmin) {
+      return Math.min(Math.abs(dmin - this.settings.rbdthd),
+                      Math.abs(dmin - 100-this.settings.rbdthd))
     },
 
     reload() {
@@ -127,7 +134,7 @@ export default {
       this.dmin = this.calcDist(v-rmin)
 
       if (!this.settings.enabled) return
-      if (this.dmin <= this.settings.rbdmin || this.dmax <= this.settings.rbdmin)
+      if (this.dmin <= this.settings.rbdthd || this.dmax <= this.settings.rbdthd)
         this.rebalance()
     },
 
@@ -147,12 +154,17 @@ export default {
       this.bmax = bmax
       this.brange = this.rmax / 100 // bmax - bmin is less precise
 
-      this.settings.rebals.forEach(rb => {
-        rb.rmin = (this.bmin + rb.pmin*this.brange).toFixed(1)
-        rb.rmax = (this.bmax + rb.pmax*this.brange).toFixed(1)
+      this.rebals.forEach(rb => {
+        rb.rmin  = (this.bmin + rb.pmin*this.brange).toFixed(1)
+        rb.rmax  = (this.bmax + rb.pmax*this.brange).toFixed(1)
         rb.range = rb.rmax - rb.rmin
-        rb.dmin = this.calcDist(this.price-rb.rmin, rb.range)
+        rb.dmin  = this.calcDist(this.price-rb.rmin, rb.range)
+        rb.dthd  = this.distThd(rb.dmin)
+        rb.style = null
       })
+
+      let br = _.maxBy(this.rebals, 'dthd')
+      br.style = 'outline: 1px solid #FFD700'
 
       await this.setRange(this.settings.cpmin, this.settings.cpmax) //revert back
       this.status = null
@@ -217,7 +229,7 @@ export default {
         let btn = $('.bx--btn:contains("Rebalance")').last()
         while (btn.prop('disabled')) if (this.status) await this.sleep(1); else return
         btn.click()
-      }, {retry: true})
+      })
     },
 
     cancel() {
@@ -226,23 +238,26 @@ export default {
       this.clearOp()
     },
 
-    transact(status, cb, {retry = true} = {}) {
+    async opTrack(cb, {retry = true} = {}) {
+      this.opstatus = 'Waiting for route'
+      await cb()
+      this.opstatus = 'Waiting for Rabby'
+      await this.sleep(14)
+      this.rabbyConfirm()
+      this.opstatus = 'Waiting status'
+      await this.sleep(14)
+      if (document.querySelector('.bx--inline-notification--error')) {
+        if (retry) return // keep interval active
+        else this.clearOp()
+      } else if (document.querySelector('.bx--inline-notification--success'))
+        this.clearOp()
+    },
+
+    transact(status, cb) {
       this.clearOp()
       this.status = status
-
-      this.opInt = setInterval(async () => {
-        await cb()
-        this.opstatus = 'Waiting for Rabby'
-        await this.sleep(10)
-        this.rabbyConfirm()
-        this.opstatus = 'Waiting status'
-        await this.sleep(10)
-        if (document.querySelector('.bx--inline-notification--error')) {
-          if (retry) return // keep interval active
-          else this.clearOp()
-        } else if (document.querySelector('.bx--inline-notification--success'))
-          this.clearOp()
-      }, 30*1000)
+      this.opTrack(cb)
+      this.opInt = setInterval(() => this.opTrack(cb), 30*1000)
     },
 
     flashStatus(status) {
@@ -255,15 +270,14 @@ export default {
       this.opstatus = null
       this.rabby_op = null
       clearInterval(this.opInt)
-      document.querySelector('.bx--modal-close')?.click() // close any previous error
+      $('.bx--modal-close').last().click()
     },
 
     async rabbyConfirm(cb) {
       if (!this.settings.enabled) return
       this.rabby_op = 'sign'
       this.rabbyMsg(async () => {
-        this.clearOp()
-        await this.sleep(10) // wait for UI
+        await this.sleep(5)
         this.rabby_op = 'confirm'
         this.rabbyMsg(cb)
       })
