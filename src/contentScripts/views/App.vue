@@ -13,14 +13,13 @@
       <button class='btn btn-secondary' :disabled=status @click=harvest() > Harvest </button>
     </div>
 
-    <Range :rb=cr :reb=settings.rbdthd />
-
-    <div id=settings class=card >
+    <div class=card v-if=settings.enabled >
+      <Range :rb=cr :reb=settings.rbdthd />
       <div class=card-body >
         <div class='d-flex flex-row' >
           <h5 class=card-title > Rebals </h5>
           <div class='form-check form-switch' >
-            <input class=form-check-input type=checkbox role=switch v-model=settings.enabled @change=reload() >
+            <input class=form-check-input type=checkbox role=switch v-model=settings.autorebal @change=reload() >
           </div>
         </div>
         <Range v-for='(rb,i) in rebals' :rb=rb :reb=settings.rbdthd >
@@ -35,7 +34,13 @@
 
     <div id=settings class=card >
       <div class=card-body >
-        <h5 class=card-title > Settings </h5>
+        <div class='d-flex flex-row' >
+          <h5 class=card-title > Settings </h5>
+          <div class='form-check form-switch' >
+            <input class=form-check-input type=checkbox role=switch v-model=settings.enabled @change=onEnable() >
+          </div>
+        </div>
+
         <div> Rebalance Trigger %:
           <input type=number min=1 max=40 v-model=settings.rbdthd @change=reload() />
           <span> current price var: {{round(cr.range * settings.rbdthd/100)}}</span>
@@ -70,10 +75,11 @@ export default {
       br: {rmin: null, rmax: null, range: null,},
 
       settings: {
-        enabled: false,
+        enabled: true,
+        autorebal: false,
         cpmin: -1, cpmax: 1,
         rbdthd: 20, rbdreq: 30, slippage: 0.1,
-        rebals: [ 
+        rebals: [
           {enabled: true},
           {enabled: true},
           {enabled: true},
@@ -105,15 +111,12 @@ export default {
       await chrome.storage.local.set({ ['vfat_automate']: this.settings })
     },
 
-    calcDist(diff, range) {
-      range = range || this.cr.range
-      return Math.round(100 * (Math.abs(diff) / range))
-    },
-    distThd(dmin) {
-      return Math.max(this.settings.rbdthd - dmin, 100-this.settings.rbdthd - dmin)
+    onEnable() {
+      this.status = (!this.settings.enabled) ? 'Disabled' : null
     },
 
     reload() {
+      if (!this.settings.enabled) return
       if (this.status) return // can't change params during OP
 
       let el = document.querySelector('p.bx--inline-notification__title') 
@@ -136,7 +139,7 @@ export default {
       this.cr.dmax = this.calcDist(rmax-v)
       this.cr.dmin = this.calcDist(v-rmin)
 
-      if (!this.settings.enabled) return
+      if (!this.settings.autorebal) return
       if (this.cr.dmin <= this.settings.rbdthd || this.cr.dmax <= this.settings.rbdthd)
         this.rebalance()
     },
@@ -161,13 +164,13 @@ export default {
       await this.setRange(0, 0)
       await this.sleep(1)
       let txt = document.querySelector('.bx--toast-notification').innerText
-      if (txt.includes('No rebalance needed')) {
-        this.br.rmin = this.cr.rmin
-        this.br.rmax = this.cr.rmax
-      } else {
+      if (!txt?.includes('No rebalance needed')) {
         let [brmin, brmax] = txt.match(/range ([\d,.]+) - ([\d,\.]+)\./).slice(1,3).map(this.parseNum)
         this.br.rmin = brmin
         this.br.rmax = brmax
+      } else {
+        this.br.rmin = this.cr.rmin
+        this.br.rmax = this.cr.rmax
       }
       this.br.range = this.cr.rmax / 100 // br.rmax - br.rmin is less precise
 
@@ -255,19 +258,27 @@ export default {
       this.clearOp()
     },
 
-    async opTrack(cb, {retry = true} = {}) {
-      this.opstatus = 'Waiting for route'
-      await cb()
-      this.opstatus = 'Waiting for Rabby'
-      await this.sleep(14)
-      this.rabbyConfirm()
-      this.opstatus = 'Waiting status'
-      await this.sleep(14)
+    checkStatus(retry) {
       if (document.querySelector('.bx--inline-notification--error')) {
         if (retry) return // keep interval active
-        else this.clearOp()
+        else return this.clearOp()
       } else if (document.querySelector('.bx--inline-notification--success'))
-        this.clearOp()
+        return this.clearOp()
+    },
+
+    async opTrack(cb, {retry = true} = {}) {
+      if (this.opstatus) return // still running
+      this.opstatus = 'Waiting for route'
+      await cb()
+      await this.sleep(5)
+      if (this.checkStatus(retry)) return this.opTrack(cb, {retry}) //mostly slippage errors
+      this.opstatus = 'Waiting for Rabby'
+      await this.sleep(10)
+      this.rabbyConfirm()
+      this.opstatus = 'Waiting status'
+      await this.sleep(10)
+      if (this.checkStatus(retry)) return
+      this.opstatus = null
     },
 
     transact(status, cb) {
@@ -288,15 +299,17 @@ export default {
       this.rabby_op = null
       clearInterval(this.opInt)
       $('.bx--modal-close').last().click()
+      return true
     },
 
     async rabbyConfirm(cb) {
-      if (!this.settings.enabled) return
+      if (!this.settings.autorebal) return
       this.rabby_op = 'sign'
       this.rabbyMsg(async () => {
-        await this.sleep(5)
-        this.rabby_op = 'confirm'
-        this.rabbyMsg(cb)
+        cb()
+        //await this.sleep(5)
+        //this.rabby_op = 'confirm'
+        ////this.rabbyMsg(cb)
       })
     },
     rabbyMsg(cb) {
@@ -307,6 +320,14 @@ export default {
 
     sleep(s) {
       return new Promise(res => setTimeout(res, s*1000))
+    },
+
+    calcDist(diff, range) {
+      range = range || this.cr.range
+      return Math.round(100 * (Math.abs(diff) / range))
+    },
+    distThd(dmin) {
+      return Math.min(dmin - this.settings.rbdthd, 100-this.settings.rbdthd - dmin)
     },
 
     parseNum(n) {
@@ -320,6 +341,7 @@ export default {
 
   mounted() {
     this.loadSettings()
+    this.onEnable()
     this.getRange()
     setInterval(this.reload, 1*1000)
   },
