@@ -14,6 +14,10 @@
     </div>
 
     <div class=card v-if=settings.enabled >
+      <select class=form-select v-model=settings.ca @change=selectAsset() >
+        <option v-for='a in assets' :value=a.name > {{a.name}} </option>
+      </select>
+
       <Range :rb=cr :reb=settings.rbdthd />
       <div class=card-body >
         <div class='d-flex flex-row' >
@@ -67,6 +71,8 @@ export default {
       status: null, opstatus: null,
       opInt: null, rabby_op: null,
 
+      assets: [],
+
       //                        price                                  rmin - rmax             rpct
       // 'Current pool price is 3430.3, your position price range is 3401.6 - 3470.3 and it is 2% wide.'
       price: null,
@@ -75,6 +81,7 @@ export default {
       br: {rmin: null, rmax: null, range: null,},
 
       settings: {
+        ca: null,
         enabled: true,
         autorebal: false,
         cpmin: -1, cpmax: 1,
@@ -115,12 +122,30 @@ export default {
       this.status = (!this.settings.enabled) ? 'Disabled' : null
     },
 
+    loadAssets() {
+      let sel = document.querySelectorAll('.farm-container tr[data-row] td:nth-child(2)')
+      this.assets = [...sel].map(s => {
+        return {name: s.innerText.split('\n')[0]}
+      })
+    },
+
+    selectAsset() {
+      if (!this.settings.ca) this.settings.ca = this.assets[0].name
+      let row = $(`.farm-container tr[data-row] td:nth-child(2):contains("${this.settings.ca}")`)
+      if (row.parents('.bx--selected_row').length) return
+      row.click()
+    },
+
     reload() {
+      this.loadAssets()
+
       if (!this.settings.enabled) return
       if (this.status) return // can't change params during OP
 
+      this.selectAsset()
+
       let el = document.querySelector('.bx--inline-notification--info-square') 
-      if (!el) return document.querySelector('tr:not(.bx--expandable-row) .symbol')?.click()
+      if (!el) return this.selectAsset()
 
       let m = el.innerText.match(/is ([\d,.]+).+is ([\d,.]+) - ([\d,\.]+).*is (\d+)% wide/)
       if (!m) return
@@ -164,11 +189,12 @@ export default {
       await this.setRange(0, 0)
       await this.sleep(1)
       let txt = $('.bx--toast-notification--info').last().text()
-      if (!txt?.includes('No rebalance needed')) {
-        let [brmin, brmax] = txt.match(/range ([\d,.]+) - ([\d,\.]+)\./).slice(1,3).map(this.parseNum)
+      let m   = txt.match(/range ([\d,.]+) - ([\d,\.]+)\./)
+      if (m) {
+        let [brmin, brmax] = m.slice(1,3).map(this.parseNum)
         this.br.rmin = brmin
         this.br.rmax = brmax
-      } else {
+      } else { // "No Rebalance needed"
         this.br.rmin = this.cr.rmin
         this.br.rmax = this.cr.rmax
       }
@@ -284,6 +310,7 @@ export default {
     transact(status, cb) {
       this.clearOp()
       this.status = status
+      this.selectAsset()
       this.opTrack(cb)
       this.opInt = setInterval(() => this.opTrack(cb), 30*1000)
     },
