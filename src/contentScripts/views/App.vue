@@ -67,7 +67,7 @@ export default {
       status: null, opstatus: null,
       opInt: null, rabby_op: null,
 
-      //                       price                                 rmin   - rmax             rpct
+      //                        price                                  rmin - rmax             rpct
       // 'Current pool price is 3430.3, your position price range is 3401.6 - 3470.3 and it is 2% wide.'
       price: null,
       cr: {rmin: null, rmax: null, rpct: null, range: null, dmin: null, dmax: null,},
@@ -119,7 +119,7 @@ export default {
       if (!this.settings.enabled) return
       if (this.status) return // can't change params during OP
 
-      let el = document.querySelector('p.bx--inline-notification__title') 
+      let el = document.querySelector('.bx--inline-notification--info-square') 
       if (!el) return document.querySelector('tr:not(.bx--expandable-row) .symbol')?.click()
 
       let m = el.innerText.match(/is ([\d,.]+).+is ([\d,.]+) - ([\d,\.]+).*is (\d+)% wide/)
@@ -163,7 +163,7 @@ export default {
 
       await this.setRange(0, 0)
       await this.sleep(1)
-      let txt = document.querySelector('.bx--toast-notification').innerText
+      let txt = $('.bx--toast-notification--info').last().text()
       if (!txt?.includes('No rebalance needed')) {
         let [brmin, brmax] = txt.match(/range ([\d,.]+) - ([\d,\.]+)\./).slice(1,3).map(this.parseNum)
         this.br.rmin = brmin
