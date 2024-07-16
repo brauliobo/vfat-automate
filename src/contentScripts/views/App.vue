@@ -200,6 +200,7 @@ export default {
         rb.i     = i
         rb.rmin  = this.round(this.br.rmin + rb.pmin*this.br.range)
         rb.rmax  = this.round(this.br.rmax + rb.pmax*this.br.range)
+        rb.rpct  = rb.pmax - rb.pmin + 1
         rb.range = rb.rmax - rb.rmin
         rb.dmin  = this.calcDist(this.price-rb.rmin, rb.range)
         rb.dthd  = this.distThd(rb.dmin)
