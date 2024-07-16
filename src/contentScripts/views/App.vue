@@ -109,10 +109,13 @@ export default {
 
   methods: {
 
-    async loadSettings() {
+    async readSettings() {
       let { ['vfat_automate']: value } = await chrome.storage.local.get(['vfat_automate'])
       if (value?.rebals) value.rebals = Object.values(value.rebals) 
-      this.settings = { ...this.settings, ...value }
+      return value
+    },
+    async loadSettings() {
+      this.settings = { ...this.settings, ...(await this.readSettings()) }
     },
     async saveSettings() {
       await chrome.storage.local.set({ ['vfat_automate']: this.settings })
@@ -304,15 +307,14 @@ export default {
       this.opstatus = 'Waiting status'
       await this.sleep(10)
       if (this.checkStatus(retry)) return
-      this.opstatus = null
     },
 
-    transact(status, cb) {
+    async transact(status, cb) {
+      if (this.status) return //busy
       this.clearOp()
       this.status = status
-      this.selectAsset()
-      this.opTrack(cb)
-      this.opInt = setInterval(() => this.opTrack(cb), 30*1000)
+      await this.opTrack(cb)
+      this.clearOp() // either success or error
     },
 
     flashStatus(status) {
