@@ -4,6 +4,7 @@
     <input type=range disabled class='w-auto' min=0 max=100 :value=rb.dmin list=values />
     <span v-if=rb.dmin ><b>{{rb.dmin}}%</b> in </span>
     <span v-if=rb.rmin >{{rb.rmin}} - {{rb.rmax}}</span>
+    <span v-if=rb.rpct >&nbsp;(<b>{{rb.rpct}}%</b>) </span>
 
     <datalist id=values>
       <option :value=reb       label='rebal down' />

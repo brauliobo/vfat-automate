@@ -73,12 +73,9 @@ export default {
 
       assets: [],
 
-      //                        price                                  rmin - rmax             rpct
-      // 'Current pool price is 3430.3, your position price range is 3401.6 - 3470.3 and it is 2% wide.'
       price: null,
       cr: {rmin: null, rmax: null, rpct: null, range: null, dmin: null, dmax: null,},
-
-      br: {rmin: null, rmax: null, range: null,},
+      br: {rmin: null, rmax: null, rpct: null, range: null, dmin: null},
 
       settings: {
         ca: null,
@@ -139,6 +136,15 @@ export default {
       row.click()
     },
 
+    extractRange(pr) {
+      return {
+        price: this.parseNum(pr.find('.current-price-tick').text().split('\n')[0]),
+        rmin:  this.parseNum(pr.find('.min-percentage').text().split('\n')[0]),
+        rmax:  this.parseNum(pr.find('.max-percentage').text().split('\n')[0]),
+        rpct:  this.parseNum(pr.find('.row :contains("Width")').text().match(/(\d\.\d+)/)[1]),
+      }
+    },
+
     reload() {
       this.loadAssets()
 
@@ -147,33 +153,24 @@ export default {
 
       this.selectAsset()
 
-      let el = document.querySelector('.bx--inline-notification--info-square') 
-      if (!el) return this.selectAsset()
-
-      let m = el.innerText.match(/is ([\d,.]+).+is ([\d,.]+) - ([\d,\.]+).*is (\d+)% wide/)
-      if (!m) return
-      let [v,rmin,rmax,rpct] = m.slice(1,5).map(this.parseNum)
+      let pr = $('.price-range-indicator-container').first()
+      if (!pr.length) return
+      let {price,rmin,rmax,rpct} = this.extractRange(pr)
       this.cr.rmin = rmin
       this.cr.rmax = rmax
       this.cr.rpct = rpct
-      this.cr.range = rmax-rmin
-      if (v != this.price) this.onPriceChange()
-      this.price = v
-      if (this.price < this.cr.rmin || this.price > this.cr.rmax)
-        return
+      this.cr.range = this.cr.rmax - this.cr.rmin
+      if (price != this.price) this.onPriceChange()
+      this.price = price
 
       this.findBestRebal()
 
-      this.cr.dmax = this.calcDist(rmax-v)
-      this.cr.dmin = this.calcDist(v-rmin)
+      this.cr.dmax = this.calcDist(rmax - price)
+      this.cr.dmin = this.calcDist(price - rmin)
 
       if (!this.settings.autorebal) return
       if (this.cr.dmin <= this.settings.rbdthd || this.cr.dmax <= this.settings.rbdthd)
         this.rebalance()
-    },
-
-    onPriceChange() {
-      this.getBaseRange()
     },
 
     findBestRebal() {
@@ -191,16 +188,12 @@ export default {
 
       await this.setRange(0, 0)
       await this.sleep(1)
-      let txt = $('.bx--toast-notification--info').last().text()
-      let m   = txt.match(/range ([\d,.]+) - ([\d,\.]+)\./)
-      if (m) {
-        let [brmin, brmax] = m.slice(1,3).map(this.parseNum)
-        this.br.rmin = brmin
-        this.br.rmax = brmax
-      } else { // "No Rebalance needed"
-        this.br.rmin = this.cr.rmin
-        this.br.rmax = this.cr.rmax
-      }
+      let pr = $('.price-range-indicator-container').last()
+      if (!pr.length) return
+      let {price,rmin,rmax,rpct} = this.extractRange(pr)
+      this.br.rmin = rmin
+      this.br.rmax = rmax
+      this.br.rpct = rpct
       this.br.range = this.cr.rmax / 100 // br.rmax - br.rmin is less precise
 
       this.rebals.forEach((rb, i) => {
@@ -218,10 +211,8 @@ export default {
       this.status = null
     },
 
-    setSlippage() {
-      [...document.querySelectorAll(`.bx--number__controls button[aria-label="${this.settings.slippage}"]`)].forEach(e => {
-        e.click()
-      })
+    onPriceChange() {
+      this.getBaseRange()
     },
 
     async getRange() {
@@ -242,9 +233,16 @@ export default {
       pmin[0].dispatchEvent(new Event('change'))
       pmax[0].dispatchEvent(new Event('change'))
     },
+
     async tabSwitch(name) {
       $(`.bx--content-switcher button:contains("${name}")`).click()
       await this.sleep(1) // wait for UI
+    },
+
+    setSlippage() {
+      [...document.querySelectorAll(`.bx--number__controls button[aria-label="${this.settings.slippage}"]`)].forEach(e => {
+        e.click()
+      })
     },
 
     async compound() {
