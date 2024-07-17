@@ -208,7 +208,7 @@ export default {
         rb.best  = false
       })
 
-      await this.setRange(this.settings.cpmin, this.settings.cpmax) //revert back
+      this.setBestRange()
       this.status = null
     },
 
@@ -233,6 +233,11 @@ export default {
       pmax.val(max)
       pmin[0].dispatchEvent(new Event('change'))
       pmax[0].dispatchEvent(new Event('change'))
+    },
+
+    async setBestRange() {
+      let brb = this.findBestRebal()
+      await this.setRange(brb.pmin, brb.pmax)
     },
 
     async tabSwitch(name) {
@@ -270,8 +275,7 @@ export default {
 
     async rebalance() {
       this.transact('Rebalancing', async () => {
-        let brb = this.findBestRebal()
-        await this.setRange(brb.pmin, brb.pmax)
+        this.setBestRange()
         this.setSlippage()
 
         let btn = $('.bx--btn:contains("Rebalance")').last()
